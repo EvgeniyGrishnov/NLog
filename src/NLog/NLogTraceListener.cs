@@ -156,7 +156,7 @@ namespace NLog
         /// <param name="message">A message to write.</param>
         public override void Write(string message)
         {
-            this.ProcessLogEventInfo(this.DefaultLogLevel, null, message, null, null);
+            this.ProcessLogEventInfo(this.DefaultLogLevel, null, message, null, null, null, null);
         }
 
         /// <summary>
@@ -165,7 +165,7 @@ namespace NLog
         /// <param name="message">A message to write.</param>
         public override void WriteLine(string message)
         {
-            this.ProcessLogEventInfo(this.DefaultLogLevel, null, message, null, null);
+            this.ProcessLogEventInfo(this.DefaultLogLevel, null, message, null, null, null, null);
         }
 
         /// <summary>
@@ -181,7 +181,7 @@ namespace NLog
         /// <param name="message">A message to emit.</param>
         public override void Fail(string message)
         {
-            this.ProcessLogEventInfo(LogLevel.Error, null, message, null, null);
+            this.ProcessLogEventInfo(LogLevel.Error, null, message, null, null, TraceEventType.Error, null);
         }
 
         /// <summary>
@@ -191,7 +191,7 @@ namespace NLog
         /// <param name="detailMessage">A detailed message to emit.</param>
         public override void Fail(string message, string detailMessage)
         {
-            this.ProcessLogEventInfo(LogLevel.Error, null, message + " " + detailMessage, null, null);
+            this.ProcessLogEventInfo(LogLevel.Error, null, message + " " + detailMessage, null, null, TraceEventType.Error, null);
         }
 
         /// <summary>
@@ -246,7 +246,7 @@ namespace NLog
                 sb.Append("}");
             }
 
-            this.ProcessLogEventInfo(TranslateLogLevel(eventType), source, sb.ToString(), data, id);
+            this.ProcessLogEventInfo(TranslateLogLevel(eventType), source, sb.ToString(), data, id, eventType, null);
         }
 
         /// <summary>
@@ -258,7 +258,7 @@ namespace NLog
         /// <param name="id">A numeric identifier for the event.</param>
         public override void TraceEvent(TraceEventCache eventCache, string source, TraceEventType eventType, int id)
         {
-            this.ProcessLogEventInfo(TranslateLogLevel(eventType), source, string.Empty, null, id);
+            this.ProcessLogEventInfo(TranslateLogLevel(eventType), source, string.Empty, null, id, eventType, null);
         }
 
         /// <summary>
@@ -272,7 +272,7 @@ namespace NLog
         /// <param name="args">An object array containing zero or more objects to format.</param>
         public override void TraceEvent(TraceEventCache eventCache, string source, TraceEventType eventType, int id, string format, params object[] args)
         {
-            this.ProcessLogEventInfo(TranslateLogLevel(eventType), source, format, args, id);
+            this.ProcessLogEventInfo(TranslateLogLevel(eventType), source, format, args, id, eventType, null);
         }
 
         /// <summary>
@@ -285,7 +285,7 @@ namespace NLog
         /// <param name="message">A message to write.</param>
         public override void TraceEvent(TraceEventCache eventCache, string source, TraceEventType eventType, int id, string message)
         {
-            this.ProcessLogEventInfo(TranslateLogLevel(eventType), source, message, null, id);
+            this.ProcessLogEventInfo(TranslateLogLevel(eventType), source, message, null, id, eventType, null);
         }
 
         /// <summary>
@@ -298,7 +298,7 @@ namespace NLog
         /// <param name="relatedActivityId">A <see cref="T:System.Guid"/>  object identifying a related activity.</param>
         public override void TraceTransfer(TraceEventCache eventCache, string source, int id, string message, Guid relatedActivityId)
         {
-            this.ProcessLogEventInfo(LogLevel.Debug, source, message, null, id);
+            this.ProcessLogEventInfo(LogLevel.Debug, source, message, null, id, TraceEventType.Transfer, relatedActivityId);
         }
 
         /// <summary>
@@ -342,7 +342,7 @@ namespace NLog
         }
 #endif
 
-        private void ProcessLogEventInfo(LogLevel logLevel, string loggerName, [Localizable(false)] string message, object[] arguments, int? eventId)
+        private void ProcessLogEventInfo(LogLevel logLevel, string loggerName, [Localizable(false)] string message, object[] arguments, int? eventId, TraceEventType? eventType, Guid? relatedActivityId)
         {
             var ev = new LogEventInfo();
 
@@ -366,7 +366,7 @@ namespace NLog
                         continue;
                     }
 
-                    if (method.DeclaringType.Assembly == systemAssembly)
+                    if (method.DeclaringType != null && Equals(method.DeclaringType.Assembly, systemAssembly))
                     {
                         // skip all methods from System.dll
                         continue;
@@ -380,7 +380,7 @@ namespace NLog
                 if (userFrameIndex >= 0)
                 {
                     ev.SetStackTrace(stack, userFrameIndex);
-                    if (userMethod.DeclaringType != null)
+                    if (userMethod != null && userMethod.DeclaringType != null)
                     {
                         ev.LoggerName = userMethod.DeclaringType.FullName;
                     }
@@ -398,8 +398,19 @@ namespace NLog
                 ev.Properties.Add("EventID", eventId.Value);
             }
 
-            Logger logger = LogManager.GetLogger(ev.LoggerName);
-            logger.Log(ev);
+            if (eventType.HasValue)
+            {
+                ev.Properties.Add("EventType", eventType.Value);
+            }
+
+            if (relatedActivityId.HasValue)
+            {
+                ev.Properties.Add("RelatedActivityID", relatedActivityId.Value);
+            }
+
+            ev.Properties.Add("ActivityID", Trace.CorrelationManager.ActivityId);
+
+            LogManager.GetLogger(ev.LoggerName).Log(ev);
         }
 
         private void InitAttributes()
