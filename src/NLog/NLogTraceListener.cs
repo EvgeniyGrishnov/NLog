@@ -54,10 +54,11 @@ namespace NLog
         private LogFactory logFactory;
         private LogLevel defaultLogLevel = LogLevel.Debug;
         private bool attributesLoaded;
+        private LogLevel forceLogLevel;
+
 #if !NET_CF
         private bool autoLoggerName;
 #endif
-        private LogLevel forceLogLevel;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="NLogTraceListener"/> class.
@@ -156,7 +157,7 @@ namespace NLog
         /// <param name="message">A message to write.</param>
         public override void Write(string message)
         {
-            this.ProcessLogEventInfo(this.DefaultLogLevel, null, message, null, null, null, null);
+            this.ProcessLogEventInfo(this.DefaultLogLevel, null, message, null, null, TranslateLogLevelBackward(this.DefaultLogLevel), null);
         }
 
         /// <summary>
@@ -165,7 +166,7 @@ namespace NLog
         /// <param name="message">A message to write.</param>
         public override void WriteLine(string message)
         {
-            this.ProcessLogEventInfo(this.DefaultLogLevel, null, message, null, null, null, null);
+            this.ProcessLogEventInfo(this.DefaultLogLevel, null, message, null, null, TranslateLogLevelBackward(this.DefaultLogLevel), null);
         }
 
         /// <summary>
@@ -340,19 +341,43 @@ namespace NLog
                     return LogLevel.Debug;
             }
         }
+
+        /// <summary>
+        /// Translates the level to event type from <see cref="LogLevel"/>.
+        /// </summary>
+        /// <param name="logLevel">Log level.</param>
+        /// <returns>Translated type of the event.</returns>
+        private static TraceEventType TranslateLogLevelBackward(LogLevel logLevel)
+        {
+            if (logLevel == LogLevel.Trace)
+                return TraceEventType.Verbose;
+
+            if (logLevel == LogLevel.Info)
+                return TraceEventType.Information;
+
+            if (logLevel == LogLevel.Warn)
+                return TraceEventType.Warning;
+
+            if (logLevel == LogLevel.Error)
+                return TraceEventType.Error;
+
+            if (logLevel == LogLevel.Fatal)
+                return TraceEventType.Critical;
+
+            return TraceEventType.Resume;
+        }
+
 #endif
 
         private void ProcessLogEventInfo(LogLevel logLevel, string loggerName, [Localizable(false)] string message, object[] arguments, int? eventId, TraceEventType? eventType, Guid? relatedActivityId)
         {
-            var ev = new LogEventInfo();
+            var ev = new LogEventInfo {LoggerName = (loggerName ?? this.Name) ?? string.Empty};
 
-            ev.LoggerName = (loggerName ?? this.Name) ?? string.Empty;
-            
 #if !NET_CF
             if (this.AutoLoggerName)
             {
                 var stack = new StackTrace();
-                int userFrameIndex = -1;
+                var userFrameIndex = -1;
                 MethodBase userMethod = null;
 
                 for (int i = 0; i < stack.FrameCount; ++i)
@@ -407,8 +432,6 @@ namespace NLog
             {
                 ev.Properties.Add("RelatedActivityID", relatedActivityId.Value);
             }
-
-            ev.Properties.Add("ActivityID", Trace.CorrelationManager.ActivityId);
 
             LogManager.GetLogger(ev.LoggerName).Log(ev);
         }
